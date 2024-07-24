@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 import sys
-from helper_methods import clean_ethnicity_column, update_thresholds, jury_selected, check_sub_category_threshold, check_thresholds, find_sub_cats_representation, can_add_to_jury, pretty_print, find_candidate_by_sub_cat, clean_education_column, clean_gender_column, clean_province_column, calculate_breakdown_by_count
+from helper_methods import clean_ethnicity_column, update_thresholds, write_to_excel,  jury_selected, check_sub_category_threshold, check_thresholds, find_sub_cats_representation, can_add_to_jury, pretty_print, find_candidate_by_sub_cat, clean_education_column, clean_gender_column, clean_province_column, calculate_breakdown_by_count
 import constants
 
 file_path = 'Data\FINAL Data Set 2024 - Copy.xlsx'
@@ -43,92 +43,100 @@ for _, row in df.iterrows():
     candidates.append(variable)
 
 
-chosen_jury = []
 not_selected = []
-chosen_jury_breakdown = calculate_breakdown_by_count(chosen_jury)
-candidate_breakdown = calculate_breakdown_by_count(candidates)
+def select_jury(thresholds):
+    chosen_jury = []
+    chosen_jury_breakdown = calculate_breakdown_by_count(chosen_jury)
+    candidate_breakdown = calculate_breakdown_by_count(candidates)
 
-unsatisfied_categories = find_sub_cats_representation(candidate_breakdown, chosen_jury_breakdown, False, constants.THRESHOLDS)
+    graveyard = []
 
-while not jury_selected(chosen_jury):
-    if len(unsatisfied_categories) > 0:
-        unsatisfied_category_info = unsatisfied_categories[0]
-        unsatisfied_category = unsatisfied_category_info[0]
-        unsatisfied_sub_category = unsatisfied_category_info[1]
+    unsatisfied_categories = find_sub_cats_representation(candidate_breakdown, chosen_jury_breakdown, False, thresholds)
+    while not jury_selected(chosen_jury, thresholds):
+        if len(unsatisfied_categories) > 0:
+            unsatisfied_category_info = unsatisfied_categories[0]
+            unsatisfied_category = unsatisfied_category_info[0]
+            unsatisfied_sub_category = unsatisfied_category_info[1]
 
-        while not check_sub_category_threshold(unsatisfied_category, unsatisfied_sub_category, chosen_jury_breakdown):
-            potential_candidate = find_candidate_by_sub_cat(unsatisfied_category, unsatisfied_sub_category, candidates)
-            if can_add_to_jury(potential_candidate, chosen_jury_breakdown):
-                chosen_jury.append(potential_candidate)
-            else:
-                most_represented_sub_cat_info = unsatisfied_categories[-1]
-                most_represented_cat = most_represented_sub_cat_info[0]
-                most_represented_sub_cat = most_represented_sub_cat_info[1]
-                candidate_to_remove = find_candidate_by_sub_cat(most_represented_cat, most_represented_sub_cat, chosen_jury)
-                chosen_jury.remove(candidate_to_remove)
-                candidates.append(candidate_to_remove)
-                not_selected.append(potential_candidate)
+            while not check_sub_category_threshold(unsatisfied_category, unsatisfied_sub_category, chosen_jury_breakdown, thresholds):
+                potential_candidate = find_candidate_by_sub_cat(unsatisfied_category, unsatisfied_sub_category, candidates)
+                if potential_candidate == None:
+                    candidates.extend(not_selected)
+                    not_selected.clear()
+                    continue
+                
+                if can_add_to_jury(potential_candidate, chosen_jury_breakdown, thresholds):
+                    chosen_jury.append(potential_candidate)
+
+
+                else:
+                    most_represented_sub_cat_info = unsatisfied_categories[-1]
+                    most_represented_cat = most_represented_sub_cat_info[0]
+                    most_represented_sub_cat = most_represented_sub_cat_info[1]
+                    candidate_to_remove = find_candidate_by_sub_cat(most_represented_cat, most_represented_sub_cat, chosen_jury)
+                    chosen_jury.remove(candidate_to_remove)
+                    candidates.append(candidate_to_remove)
+                    not_selected.append(potential_candidate)
+                    chosen_jury_breakdown = calculate_breakdown_by_count(chosen_jury)
+                    candidate_breakdown = calculate_breakdown_by_count(candidates)
+                    unsatisfied_categories = find_sub_cats_representation(candidate_breakdown, chosen_jury_breakdown, False, thresholds)
+                
+                if potential_candidate in candidates: 
+                    candidates.remove(potential_candidate)
+                    
+
                 chosen_jury_breakdown = calculate_breakdown_by_count(chosen_jury)
                 candidate_breakdown = calculate_breakdown_by_count(candidates)
-                unsatisfied_categories = find_sub_cats_representation(candidate_breakdown, chosen_jury_breakdown, False, constants.THRESHOLDS)
             
-            if potential_candidate in candidates: 
-                candidates.remove(potential_candidate)
-                
+            unsatisfied_categories = [tup for tup in unsatisfied_categories if tup[1] != unsatisfied_sub_category]
+
+        else:
+            if len(candidates) == 0:
+                candidates.extend(not_selected)
+            candidate_to_add = candidates[0]
+            if can_add_to_jury(candidate_to_add, chosen_jury_breakdown, thresholds):
+                chosen_jury.append(candidate_to_add)
+            else:
+                not_selected.append(candidate_to_add)
+
+            candidates.remove(candidate_to_add)
 
             chosen_jury_breakdown = calculate_breakdown_by_count(chosen_jury)
             candidate_breakdown = calculate_breakdown_by_count(candidates)
-        
-        unsatisfied_categories = [tup for tup in unsatisfied_categories if tup[1] != unsatisfied_sub_category]
 
-    else:
-        candidate_to_add = candidates[0]
-        if can_add_to_jury(candidate_to_add, chosen_jury_breakdown):
-            chosen_jury.append(candidate_to_add)
-        else:
-            not_selected.append(candidate_to_add)
-
-        candidates.remove(candidate_to_add)
-
-        chosen_jury_breakdown = calculate_breakdown_by_count(chosen_jury)
-        candidate_breakdown = calculate_breakdown_by_count(candidates)
+    return chosen_jury, chosen_jury_breakdown
             
-
+selected_jury, selected_jury_breakdown = select_jury(thresholds=constants.THRESHOLDS)
     
-#pretty_print(chosen_jury_breakdown)
-if check_thresholds(chosen_jury_breakdown):
+# pretty_print(selected_jury_breakdown)
+if check_thresholds(selected_jury_breakdown, constants.THRESHOLDS):
     print("Jury Found moving to subs")
-# print(len(chosen_jury))
-# write_to_excel(chosen_jury)
-
-
-
+    write_to_excel(selected_jury, "selected_jury")
 
 
 print("Remaining Candidates to get subs:")
 
-
-
 chosen_subs = []
 chosen_subs_breakdown = calculate_breakdown_by_count(chosen_subs)
 candidates.extend(not_selected)
+not_selected.clear()
 remaining_candidates_breakdown = calculate_breakdown_by_count(candidates)
 
 sub_thresholds = constants.THRESHOLDS
-if not check_thresholds(remaining_candidates_breakdown):
+if not check_thresholds(remaining_candidates_breakdown, sub_thresholds):
     sub_thresholds = update_thresholds(remaining_candidates_breakdown)
 
 
-unsatisfied_categories = find_sub_cats_representation(remaining_candidates_breakdown, chosen_subs_breakdown, False, sub_thresholds)
 
-print(unsatisfied_categories)
+selected_subs, selected_subs_breakdown = select_jury(thresholds=sub_thresholds)
 
-
-
-
-
+if check_thresholds(selected_subs_breakdown, sub_thresholds):
+    print("Subs Complete")
+    write_to_excel(selected_subs, "selected_subs")
 
 
 
 
-
+
+
+

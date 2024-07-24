@@ -133,8 +133,6 @@ def find_sub_cats_representation(candidate_breakdown, current_jury_breakdown, re
     return sorted(sub_categories, key=lambda x: x[2], reverse=reverse)
 
     
-        
-        
 def find_most_represented_sub_cat(candidate_breakdown, chosen_jury_breakdown):
     lowest_represented_subcats = find_sub_cats_representation(candidate_breakdown, chosen_jury_breakdown, True)
     for sub_category in lowest_represented_subcats:
@@ -148,11 +146,11 @@ def count_num_jurors(category, chosen_jury_breakdown):
     return sum
 
 
-def can_add_to_jury(candidate, chosen_jury_breakdown):
+def can_add_to_jury(candidate, chosen_jury_breakdown, thresholds):
     for category in chosen_jury_breakdown:
         sub_category = candidate[get_index_from_category(category)]
         current_count_for_sub_category = chosen_jury_breakdown[category][sub_category][constants.COUNT]
-        upper_threshold = constants.THRESHOLDS[category][sub_category][constants.UPPER_THRESHOLD]
+        upper_threshold = thresholds[category][sub_category][constants.UPPER_THRESHOLD]
         num_jurors_so_far = count_num_jurors(category, chosen_jury_breakdown)
         if current_count_for_sub_category >= upper_threshold or num_jurors_so_far >= constants.NUM_JURORS:
             return False
@@ -181,10 +179,10 @@ def find_candidate_by_sub_cat(category, sub_category, candidates):
     return None
 
                 
-def check_thresholds(breakdown):
+def check_thresholds(breakdown, tresholds):
     for category in breakdown:
         for subcategory in breakdown[category]:
-            if breakdown[category][subcategory][constants.COUNT] < constants.THRESHOLDS[category][subcategory][constants.LOWER_THRESHOLD]:
+            if breakdown[category][subcategory][constants.COUNT] < tresholds[category][subcategory][constants.LOWER_THRESHOLD]:
                 print("Not enough people in: ", category, "->", subcategory)
                 return False
     return True
@@ -194,28 +192,46 @@ def update_thresholds(breakdown):
     for category in new_thresholds:
             for subcategory in new_thresholds[category]:
                 count = breakdown[category][subcategory][constants.COUNT]
-                old_lower = new_thresholds[category][subcategory][constants.LOWER_THRESHOLD]
-                old_upper = new_thresholds[category][subcategory][constants.UPPER_THRESHOLD]
+                old_lower = constants.THRESHOLDS[category][subcategory][constants.LOWER_THRESHOLD]
+                old_upper = constants.THRESHOLDS[category][subcategory][constants.UPPER_THRESHOLD]
 
                 new_thresholds[category][subcategory][constants.LOWER_THRESHOLD] = min(old_lower, count)
-                new_thresholds[category][subcategory][constants.UPPER_THRESHOLD] = min(old_upper, count)
+
+                if count < old_upper:
+                    amount_to_redistribute = old_upper - count
+                    new_thresholds[category][subcategory][constants.UPPER_THRESHOLD] = count
+                    
+                    list_of_sub_cats = []
+                    for other_sub_cat in new_thresholds[category]:
+                        other_sub_cat_upper = constants.THRESHOLDS[category][other_sub_cat][constants.UPPER_THRESHOLD]
+                        list_of_sub_cats.append((other_sub_cat, other_sub_cat_upper))
+                    
+                    list_of_sub_cats = sorted(list_of_sub_cats, key=lambda x: x[1], reverse=True)
+                    biggest_mf = list_of_sub_cats[0]
+                    biggest_mf_sub_cat = biggest_mf[0]
+                    new_thresholds[category][biggest_mf_sub_cat][constants.UPPER_THRESHOLD] += amount_to_redistribute
+
+
+
+
+                            
 
     return new_thresholds
 
 
-def check_sub_category_threshold(category, sub_category, choosen_jury_breakdown):
-    return choosen_jury_breakdown[category][sub_category][constants.COUNT]>=constants.THRESHOLDS[category][sub_category][constants.LOWER_THRESHOLD]
+def check_sub_category_threshold(category, sub_category, choosen_jury_breakdown, tresholds):
+    return choosen_jury_breakdown[category][sub_category][constants.COUNT]>=tresholds[category][sub_category][constants.LOWER_THRESHOLD]
     
-def jury_selected(selected_jurors_list):
+def jury_selected(selected_jurors_list, thresholds):
     if len(selected_jurors_list) < constants.NUM_JURORS:
         return False
     else:
         selected_jurors_breakdown = calculate_breakdown_by_count(selected_jurors_list)
-        return check_thresholds(selected_jurors_breakdown)
+        return check_thresholds(selected_jurors_breakdown, thresholds)
 
 
 
-def write_to_excel(list_of_juror):
+def write_to_excel(list_of_juror, name_of_excel):
     ids=[]
     ages=[]
     genders=[]
@@ -232,4 +248,4 @@ def write_to_excel(list_of_juror):
 
     df = DataFrame({constants.ID: ids, constants.AGE: ages, constants.GENDER: genders, constants.PROVINCE: provinces, constants.ETHNICITY: ethnicities, constants.EDUCATION: educations})
     
-    df.to_excel('chosen_jury.xlsx', sheet_name='jury', index=False)
+    df.to_excel(f'{name_of_excel}.xlsx', sheet_name=name_of_excel, index=False)
